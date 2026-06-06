@@ -2,7 +2,8 @@ import os
 import streamlit as st 
 from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from langchain_groq import ChatGroq
-os.environ["GROQ_API_KEY"] = "***REMOVED***"
+from dotenv import find_dotenv,load_dotenv
+load_dotenv(find_dotenv())
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
     temperature=0.7,
