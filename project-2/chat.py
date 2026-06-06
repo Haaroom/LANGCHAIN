@@ -7,9 +7,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 st.set_page_config(page_title="Chat with GPT-3.5 Turbo", layout="wide")
 st.title("Chat with GPT-3.5 Turbo")
-
-# API key from sidebar (or OPENAI_API_KEY env var). Get one at
-# https://platform.openai.com/api-keys
 api_key = st.sidebar.text_input(
     "OpenAI API key",
     type="password",
