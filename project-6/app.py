@@ -61,37 +61,114 @@ from the following partial summaries.
         st.subheader("Summary")
         st.write(final_response.content)
 def mcqs(retriever,chunks):
-    n = st.int_input("Enter no. of mcqs to generate",min_value=1,max_value=50,value=5)
-    nO = st.int_input("Enter number of options a question should have ",min_value=2,max_value=7,value=4)
+    n = st.number_input("Enter no. of mcqs to generate",min_value=1,max_value=50,value=5)
+    nO = st.number_input("Enter number of options a question should have ",min_value=2,max_value=7,value=4)
     difficulty=st.radio("enter difficulty",["easy","medium","hard"])
     type=st.selectbox("topic/full pdf",["topic","fullPDF"])
     if type=="topic":
         topic =st.text_input("Enter the topic you want to generate mcqs")
         if st.button("generate mcq's"):
             res=retriever.invoke(topic)
-            context= "/n/n".join(i.page_content for i in res)
+            context= "\n\n".join(i.page_content for i in res)
     elif type == "fullPDF":
         if st.button("generate mcq's"):
-            context = "/n".join(chunk.page_content for chunk in chunks)
-    response_schemas=ResponseSchema(name="mcqs",description=f"""Generate {n} MCQs.Each MCQ must contain:- question- options dictionary- answer keyReturn as a list.""")
-    format_instruction=StructuredOutputParser.from_response_schema(response_schemas).get_format_instructions()
+            context = "\n\n".join(chunk.page_content for chunk in chunks)
+    response_schemas = [
+    ResponseSchema(
+        name="mcqs",
+        description=f"""
+Generate {n} MCQs.
 
+Each MCQ must contain:
+- question (string)
+- options (dictionary with keys A,B,C,D... and option text as values)
+- answer (single option key such as A,B,C,D)
 
+Return all MCQs as a list.
+"""
+    )
+]
+    format_instruction=StructuredOutputParser.from_response_schemas(response_schemas).get_format_instructions()
+    prompt = ChatPromptTemplate.from_template("""
+You are an expert educational content creator.
 
+Generate {n} multiple choice questions.
 
+Requirements:
+- Difficulty: {difficulty}
+- Number of options per question: {num_options}
+- Questions must come only from the provided context.
+- Do not create duplicate questions.
+- Exactly one correct answer.
+- Store answer as option label (A,B,C,D...)
 
+Context:
+{context}
 
+{format_instructions}
+""")
+    format_prompt=prompt.invoke({
+        "n": n,
+    "difficulty": difficulty,
+    "num_options": nO,
+    "context": context,
+    "format_instructions": format_instruction
+    }
+    )
+    response = llm.invoke(format_prompt)
+    parsed = StructuredOutputParser.from_response_schema(response_schemas).parse(response.content)
+    st.write(parsed)
+def research(retriever):
+    topic = st.text_input("enter your topic")
+    context ="\n\n".join(i.page_content for i in retriever.invoke(topic))
+    response_schemas = [
+    ResponseSchema(
+        name="main_concepts",
+        description="Main concepts related to the topic"),
+    ResponseSchema(
+        name="key_findings",
+        description="Important findings and insights"
+    ),
+    ResponseSchema(
+        name="terminology",
+        description="Important technical terms"
+    ),
+    ResponseSchema(
+        name="applications",
+        description="Applications of the topic"
+    ),
+    ResponseSchema(
+        name="conclusion",
+        description="Final conclusion")
+]
+    format_instruction=StructuredOutputParser.from_response_schemas(response_schemas).get_format_instuctions()
+    prompt = ChatPromptTemplate.from_template("""
+You are an expert researcher.
+Analyze the topic using only the supplied context.
+Topic:
+{topic}
+Context:
+{context}
+{format_instructions}
+""").invoke({
+    "topics":topic,
+    "context":context,
+    "format_instruction":format_instruction
+})
+    response=llm.invoke(prompt)
+    parsed = StructuredOutputParser.from_response_schemas(response_schemas).parse(response.content)
+    st.subheader("Main Concepts")
+    st.write(parsed["main_concepts"])
+    st.subheader("Key Findings")
+    st.write(parsed["key_findings"])
+    st.subheader("Terminology")
+    st.write(parsed["terminology"])
+    st.subheader("Applications")
+    st.write(parsed["applications"])
+    st.subheader("Conclusion")
+    st.write(parsed["conclusion"])
 
-        
-        
-
-
-
-
-    
-def research():
-    pass
-def question(db,llm):
+def question():
     query = st.text_input("Enter your question")
     if query:
         docs = retriever.invoke(query)
