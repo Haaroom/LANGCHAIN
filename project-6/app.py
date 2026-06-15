@@ -1,14 +1,13 @@
 import os
 from dotenv import find_dotenv, load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpoint
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import ResponseSchema,StructuredOutputParser
 import streamlit as st 
-from pinecone import Pinecone
 load_dotenv(find_dotenv())
 def build_db(pdf):
     data = PyPDFLoader(pdf).load()
@@ -17,8 +16,36 @@ def build_db(pdf):
     return FAISS.from_documents(chunks,embedder),chunks
 def build_retriever(db,k=2):
     return db.as_retriever(search_kwargs={"k":k})
-def chat():
-    pass
+def chat(retriever):
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    def display_old_msgs():
+        for msg in st.session_state.messages[-10:]:
+             with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+    display_old_msgs()
+    query=st.chat_input("as your question")
+    if query :
+        st.session_state.messages.append({"role":"user","content":query})
+        content="\n\n".join(i.page_content for i in retriever.invoke(query))
+        history = "\n".join(f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages)
+        prompt = ChatPromptTemplate.from_template("""
+You are a PDF assistant.
+Chat History:
+{history}
+Context:
+{context}
+Current Question:
+{question}
+Answer only using the PDF.
+""").invoke({"history":history,"context":content,"question":query})
+    response = llm.invoke(prompt).content
+    st.session_state.messages.append({
+    "role":"assistant",
+    "content":response
+})
+    with st.chat_message("assistant"):
+        st.write(response)
 def summary(chunks):
     summary_type = st.selectbox(
         "Summary Type",
@@ -116,7 +143,7 @@ Context:
     }
     )
     response = llm.invoke(format_prompt)
-    parsed = StructuredOutputParser.from_response_schema(response_schemas).parse(response.content)
+    parsed = StructuredOutputParser.from_response_schemas(response_schemas).parse(response.content)
     st.write(parsed)
 def research(retriever):
     topic = st.text_input("enter your topic")
@@ -141,7 +168,7 @@ def research(retriever):
         name="conclusion",
         description="Final conclusion")
 ]
-    format_instruction=StructuredOutputParser.from_response_schemas(response_schemas).get_format_instuctions()
+    format_instruction=StructuredOutputParser.from_response_schemas(response_schemas).get_format_instructions()
     prompt = ChatPromptTemplate.from_template("""
 You are an expert researcher.
 Analyze the topic using only the supplied context.
@@ -151,7 +178,7 @@ Context:
 {context}
 {format_instructions}
 """).invoke({
-    "topics":topic,
+    "topic":topic,
     "context":context,
     "format_instruction":format_instruction
 })
@@ -167,8 +194,7 @@ Context:
     st.write(parsed["applications"])
     st.subheader("Conclusion")
     st.write(parsed["conclusion"])
-
-def question():
+def question(retriever):
     query = st.text_input("Enter your question")
     if query:
         docs = retriever.invoke(query)
@@ -181,7 +207,7 @@ def question():
         {query}
         """
         response = llm.invoke(prompt)
-        st.write(response)
+        st.write(response.content)
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
     temperature=0.7,
@@ -194,19 +220,18 @@ file = st.sidebar.file_uploader(type=["pdf"])
 if file :
     db,chunks=build_db(file)
     retriever = build_retriever(db)
-
 action=st.selectbox("choose action",["Question","Summary","Mcq's","Chat","Research"])
-actions=["question","summary","mcqs","chat","research"]
+actions=["question","summary","MCQ'S","chat","research"]
 if action == "Question":
-    question(retriever,llm)
+    question(retriever)
 elif action == "Summary":
-    summary(db,chunks)
-elif action == "MCQs":
-    mcqs()
+    summary(chunks)
+elif action == "MCQ'S":
+    mcqs(retriever,chunks)
 elif action == "Chat":
-    chat()
+    chat(retriever)
 elif action == "Research":
-    research()
+    research(retriever)
 
 
 
